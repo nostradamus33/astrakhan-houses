@@ -1,0 +1,98 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Дома Астрахани — Карта износа</title>
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/>
+    <link rel="stylesheet" href="https://unpkg.com/leaflet.markercluster@1.5.3/dist/MarkerCluster.css"/>
+    <link rel="stylesheet" href="https://unpkg.com/leaflet.markercluster@1.5.3/dist/MarkerCluster.Default.css"/>
+    <style>
+        *{margin:0;padding:0;box-sizing:border-box}
+        body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;background:#f5f5f5}
+        .header{background:linear-gradient(135deg,#1a237e,#283593);color:white;padding:15px 25px;display:flex;justify-content:space-between;align-items:center;box-shadow:0 2px 8px rgba(0,0,0,0.3)}
+        .header h1{font-size:22px}
+        .header .stats{font-size:14px;opacity:0.85}
+        .container{display:flex;height:calc(100vh - 60px)}
+        .sidebar{width:380px;min-width:380px;background:white;overflow-y:auto;border-right:1px solid #ddd;display:flex;flex-direction:column}
+        .filters{padding:15px;border-bottom:1px solid #eee;background:#fafafa}
+        .filters h3{font-size:15px;margin-bottom:12px;color:#333}
+        .filter-group{margin-bottom:10px}
+        .filter-group label{display:block;font-size:12px;color:#666;margin-bottom:3px;font-weight:500}
+        .filter-group input,.filter-group select{width:100%;padding:8px 10px;border:1px solid #ddd;border-radius:6px;font-size:13px;outline:none}
+        .filter-group input:focus,.filter-group select:focus{border-color:#1a237e;box-shadow:0 0 0 2px rgba(26,35,126,0.1)}
+        .filter-row{display:flex;gap:8px}
+        .filter-row .filter-group{flex:1}
+        .btn{display:inline-block;padding:9px 16px;border:none;border-radius:6px;cursor:pointer;font-size:13px;font-weight:500;transition:background 0.2s}
+        .btn-primary{background:#1a237e;color:white;width:100%}
+        .btn-primary:hover{background:#283593}
+        .btn-reset{background:#eee;color:#333;width:100%;margin-top:6px}
+        .btn-reset:hover{background:#ddd}
+        .results-info{padding:10px 15px;font-size:13px;color:#555;border-bottom:1px solid #eee;background:#f9f9f9;font-weight:500}
+        .house-list{flex:1;overflow-y:auto}
+        .house-card{padding:12px 15px;border-bottom:1px solid #f0f0f0;cursor:pointer;transition:background 0.15s}
+        .house-card:hover{background:#f0f4ff}
+        .house-card .address{font-size:13px;font-weight:600;color:#333;margin-bottom:4px}
+        .house-card .details{font-size:12px;color:#888}
+        .wear-badge{display:inline-block;padding:2px 8px;border-radius:10px;font-size:11px;font-weight:600;color:white}
+        .wear-green{background:#4caf50}.wear-orange{background:#ff9800}.wear-red{background:#f44336}.wear-gray{background:#9e9e9e}
+        .map-container{flex:1}
+        #map{width:100%;height:100%}
+        .legend{background:white;padding:12px 16px;border-radius:8px;box-shadow:0 2px 8px rgba(0,0,0,0.25);font-size:12px;line-height:1.8}
+        .legend b{font-size:13px}
+        .legend-item{display:flex;align-items:center;gap:6px}
+        .legend-dot{width:12px;height:12px;border-radius:50%;display:inline-block}
+        .loading{text-align:center;padding:40px;color:#999;font-size:14px}
+        @media(max-width:900px){.container{flex-direction:column}.sidebar{width:100%;min-width:auto;max-height:45vh}.map-container{height:55vh}}
+    </style>
+</head>
+<body>
+<div class="header">
+    <h1>&#127968; Дома Астрахани</h1>
+    <div class="stats">Всего: {{ stats.total }} | На карте: {{ stats.with_coords }} | С износом: {{ stats.with_wear }}</div>
+</div>
+<div class="container">
+    <div class="sidebar">
+        <div class="filters">
+            <h3>&#128269; Фильтры</h3>
+            <div class="filter-group"><label>Поиск по адресу</label><input type="text" id="search" placeholder="Например: Ленина"></div>
+            <div class="filter-group"><label>Состояние</label><select id="condition"><option value="">Все</option>{% for c in stats.conditions %}<option value="{{ c }}">{{ c }}</option>{% endfor %}</select></div>
+            <div class="filter-row">
+                <div class="filter-group"><label>Год от</label><input type="number" id="year_from" placeholder="{{ stats.min_year }}"></div>
+                <div class="filter-group"><label>Год до</label><input type="number" id="year_to" placeholder="{{ stats.max_year }}"></div>
+            </div>
+            <div class="filter-row">
+                <div class="filter-group"><label>Износ от %</label><input type="number" id="wear_from" placeholder="0" min="0" max="100"></div>
+                <div class="filter-group"><label>Износ до %</label><input type="number" id="wear_to" placeholder="100" min="0" max="100"></div>
+            </div>
+            <button class="btn btn-primary" onclick="applyFilters()">Применить</button>
+            <button class="btn btn-reset" onclick="resetFilters()">Сбросить</button>
+        </div>
+        <div class="results-info" id="results-info">Загрузка...</div>
+        <div class="house-list" id="house-list"><div class="loading">&#8987; Загрузка...</div></div>
+    </div>
+    <div class="map-container"><div id="map"></div></div>
+</div>
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<script src="https://unpkg.com/leaflet.markercluster@1.5.3/dist/leaflet.markercluster.js"></script>
+<script>
+var map=L.map('map').setView([46.3497,48.0408],12);
+L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',{attribution:'&copy; OpenStreetMap',maxZoom:19}).addTo(map);
+var markers=L.markerClusterGroup({maxClusterRadius:50,disableClusteringAtZoom:17});
+map.addLayer(markers);
+var legend=L.control({position:'bottomright'});
+legend.onAdd=function(){var d=L.DomUtil.create('div','legend');d.innerHTML='<b>Износ здания</b><br><div class="legend-item"><span class="legend-dot" style="background:#4caf50"></span> &lt;30%</div><div class="legend-item"><span class="legend-dot" style="background:#ff9800"></span> 30-60%</div><div class="legend-item"><span class="legend-dot" style="background:#f44336"></span> &gt;60%</div><div class="legend-item"><span class="legend-dot" style="background:#9e9e9e"></span> нет данных</div>';return d};
+legend.addTo(map);
+function getColor(w){if(w===null||w===undefined)return'#9e9e9e';if(w<30)return'#4caf50';if(w<60)return'#ff9800';return'#f44336'}
+function getWearClass(w){if(w===null||w===undefined)return'wear-gray';if(w<30)return'wear-green';if(w<60)return'wear-orange';return'wear-red'}
+function createIcon(c){return L.divIcon({className:'',html:'<div style="background:'+c+';width:14px;height:14px;border-radius:50%;border:2px solid white;box-shadow:0 1px 4px rgba(0,0,0,0.4)"></div>',iconSize:[14,14],iconAnchor:[7,7],popupAnchor:[0,-10]})}
+function loadHouses(p){p=p||'';document.getElementById('results-info').textContent='Загрузка...';document.getElementById('house-list').innerHTML='<div class="loading">&#8987;</div>';fetch('/api/houses'+p).then(function(r){return r.json()}).then(function(data){updateMap(data.houses);updateList(data.houses);document.getElementById('results-info').textContent='Найдено: '+data.count+' домов'}).catch(function(e){document.getElementById('results-info').textContent='Ошибка';console.error(e)})}
+function updateMap(houses){markers.clearLayers();houses.forEach(function(h){if(!h.lat||!h.lon)return;var c=getColor(h.wear_num);var popup='<div style="min-width:220px;font-size:13px"><b>'+(h.address||'—')+'</b><hr style="margin:6px 0;border:none;border-top:1px solid #ddd"><b>Год:</b> '+(h.year_built||'—')+'<br><b>Состояние:</b> '+(h.condition||'—')+'<br><b>Износ:</b> '+(h.wear_percent||'—')+'<br><a href="'+h.url+'" target="_blank" style="font-size:11px;color:#1a237e">Подробнее &rarr;</a></div>';markers.addLayer(L.marker([h.lat,h.lon],{icon:createIcon(c)}).bindPopup(popup))})}
+function updateList(houses){var list=document.getElementById('house-list');list.innerHTML='';if(!houses.length){list.innerHTML='<div class="loading">Ничего не найдено</div>';return}houses.forEach(function(h){var card=document.createElement('div');card.className='house-card';card.innerHTML='<div class="address">'+(h.address||'—')+'</div><div class="details">Год: '+(h.year_built||'—')+' | '+(h.condition||'—')+' <span class="wear-badge '+getWearClass(h.wear_num)+'">'+(h.wear_percent||'н/д')+'</span></div>';if(h.lat&&h.lon){card.onclick=(function(la,lo){return function(){map.setView([la,lo],17);markers.eachLayer(function(l){var ll=l.getLatLng();if(Math.abs(ll.lat-la)<0.0001&&Math.abs(ll.lng-lo)<0.0001)l.openPopup()})}})(h.lat,h.lon)}list.appendChild(card)})}
+function applyFilters(){var p=[];var s=document.getElementById('search').value.trim();var c=document.getElementById('condition').value;var yf=document.getElementById('year_from').value;var yt=document.getElementById('year_to').value;var wf=document.getElementById('wear_from').value;var wt=document.getElementById('wear_to').value;if(s)p.push('search='+encodeURIComponent(s));if(c)p.push('condition='+encodeURIComponent(c));if(yf)p.push('year_from='+yf);if(yt)p.push('year_to='+yt);if(wf)p.push('wear_from='+wf);if(wt)p.push('wear_to='+wt);loadHouses(p.length?'?'+p.join('&'):'')}
+function resetFilters(){['search','condition','year_from','year_to','wear_from','wear_to'].forEach(function(id){document.getElementById(id).value=''});loadHouses()}
+document.getElementById('search').addEventListener('keypress',function(e){if(e.key==='Enter')applyFilters()});
+loadHouses();
+</script>
+</body>
+</html>
